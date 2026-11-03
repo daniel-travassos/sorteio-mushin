@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sorteio Mushin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Substitutas gratuitas: Fraunces ~ Flowers of Nineties (títulos), Figtree ~ Ulm Grotesk (apoio) -->
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --offwhite: #fcfbf2; --nude: #feede3; --orange: #feb786; --terracota: #f69d7c;
+    --pink: #ffcacf; --blue: #b8dcff; --yellow: #ffedbc; --purple: #d9beff;
+    --brown: #2b1003; --muted: #7a6459;
+    --display: "Flowers Of Nineties", "Fraunces", Georgia, serif;
+    --body: "Ulm Grotesk", "Figtree", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+    background: var(--offwhite); color: var(--brown); font-family: var(--body);
+  }
+  main { width: 100%; max-width: 440px; text-align: center; }
+  .logo { display: block; width: 190px; margin: 0 auto 8px; mix-blend-mode: multiply; }
+  .faixa { margin: 0 0 24px; color: var(--muted); font-size: .95rem; }
+  .cartao {
+    background: var(--nude); border-radius: 28px; padding: 36px 20px 28px;
+    position: relative; overflow: hidden;
+  }
+  .cartao::before, .cartao::after {
+    content: ""; position: absolute; border-radius: 50%; opacity: .55; pointer-events: none;
+  }
+  .cartao::before { width: 150px; height: 150px; background: var(--yellow); top: -60px; left: -50px; }
+  .cartao::after { width: 130px; height: 130px; background: var(--blue); bottom: -55px; right: -45px; }
+  .cartao > * { position: relative; z-index: 1; }
+  .numero {
+    font-family: var(--display); font-weight: 400;
+    font-size: clamp(4.5rem, 24vw, 7rem); line-height: 1; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; min-height: 1.05em;
+  }
+  .numero.vazio { color: var(--orange); }
+  .numero.pronto { animation: pulo .4s ease-out; }
+  @keyframes pulo { 0% { transform: scale(.94); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
+  .cliente { margin-top: 14px; min-height: 3.4em; }
+  .cliente .nome { font-family: var(--display); font-size: 1.7rem; line-height: 1.2; }
+  .cliente .data { margin-top: 2px; color: var(--muted); font-size: .95rem; }
+  .seed { margin-top: 18px; min-height: 2.6em; font-size: .85rem; color: var(--muted); }
+  .seed b { display: block; margin-top: 2px; color: var(--brown); font-weight: 500; font-size: .95rem; letter-spacing: .08em; user-select: all; }
+  button {
+    margin-top: 12px; width: 100%; padding: 17px; border: 0; border-radius: 999px;
+    background: var(--brown); color: var(--offwhite);
+    font: inherit; font-size: 1.05rem; font-weight: 500; cursor: pointer;
+    transition: background .2s;
+  }
+  button:hover { background: #4a2210; }
+  button:focus-visible { outline: 3px solid var(--terracota); outline-offset: 3px; }
+  button:disabled { opacity: .55; cursor: default; }
+  .erro { color: #a3361b; margin-top: 12px; font-size: .9rem; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="logo.png" alt="Mushin">
+  <p class="faixa">Sorteio de 9016 a 9206</p>
+  <section class="cartao">
+    <div class="numero vazio" id="numero" role="status" aria-live="polite">----</div>
+    <div class="cliente" id="cliente"></div>
+    <div class="seed" id="seed"></div>
+    <button id="botao" type="button">Sortear</button>
+    <div class="erro" id="erro"></div>
+  </section>
+</main>
+<script>
+  const MINIMO = 9016, MAXIMO = 9206;
+  const numeroEl = document.getElementById('numero');
+  const clienteEl = document.getElementById('cliente');
+  const seedEl = document.getElementById('seed');
+  const botao = document.getElementById('botao');
+  const erro = document.getElementById('erro');
+  const esperar = ms => new Promise(r => setTimeout(r, ms));
+  const pedidos = fetch('pedidos.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+
+  const novaSeed = () => Array.from(crypto.getRandomValues(new Uint8Array(8)),
+    b => b.toString(16).padStart(2, '0')).join('');
+
+  // Mesma regra do sorteio.py: SHA-256 da seed (UTF-8) como inteiro, módulo o tamanho da faixa.
+  async function numeroDaSeed(seed) {
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed));
+    const hex = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+    return MINIMO + Number(BigInt('0x' + hex) % BigInt(MAXIMO - MINIMO + 1));
+  }
+
+  async function sortear() {
+    botao.disabled = true;
+    erro.textContent = '';
+    seedEl.textContent = '';
+    clienteEl.textContent = '';
+    try {
+      const seed = novaSeed();
+      const [numero, dadosPedidos] = await Promise.all([numeroDaSeed(seed), pedidos, esperar(900)]);
+
+      numeroEl.classList.remove('vazio', 'pronto');
+      const fim = Date.now() + 900;
+      while (Date.now() < fim) {
+        numeroEl.textContent = MINIMO + Math.floor(Math.random() * (MAXIMO - MINIMO + 1));
+        await esperar(60);
+      }
+      numeroEl.textContent = numero;
+      void numeroEl.offsetWidth;
+      numeroEl.classList.add('pronto');
+
+      const pedido = dadosPedidos[numero];
+      if (pedido) {
+        const nome = document.createElement('div');
+        nome.className = 'nome';
+        nome.textContent = pedido.nome;
+        const data = document.createElement('div');
+        data.className = 'data';
+        data.textContent = 'Pedido de ' + pedido.data;
+        clienteEl.append(nome, data);
+      }
+
+      seedEl.textContent = 'Seed do sorteio';
+      const b = document.createElement('b');
+      b.textContent = seed;
+      seedEl.appendChild(b);
+    } catch {
+      erro.textContent = 'Não foi possível sortear. Tente novamente.';
+    } finally {
+      botao.disabled = false;
+    }
+  }
+  botao.addEventListener('click', sortear);
+</script>
+</body>
+</html>
