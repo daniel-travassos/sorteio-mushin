@@ -62,7 +62,7 @@
 <body>
 <main>
   <img class="logo" src="logo.png" alt="Mushin">
-  <p class="faixa">Sorteio de pedidos durante a validade da promoção de aniversário: de 16/out a 31/out</p>
+  <p class="faixa">Sorteio de pedidos feitos através do conteúdo pago de aniversário, durante a validade da promoção: de 16/out a 31/out</p>
   <section class="cartao">
     <div class="numero vazio" id="numero" role="status" aria-live="polite">----</div>
     <div class="cliente" id="cliente"></div>
@@ -72,7 +72,6 @@
   </section>
 </main>
 <script>
-  const MINIMO = 9016, MAXIMO = 9206;
   const numeroEl = document.getElementById('numero');
   const clienteEl = document.getElementById('cliente');
   const seedEl = document.getElementById('seed');
@@ -84,11 +83,12 @@
   const novaSeed = () => Array.from(crypto.getRandomValues(new Uint8Array(8)),
     b => b.toString(16).padStart(2, '0')).join('');
 
-  // Mesma regra do sorteio.py: SHA-256 da seed (UTF-8) como inteiro, módulo o tamanho da faixa.
-  async function numeroDaSeed(seed) {
+  // Mesma regra do sorteio.py: SHA-256 da seed (UTF-8) como inteiro, módulo a quantidade
+  // de pedidos elegíveis (em ordem crescente) = posição sorteada.
+  async function numeroDaSeed(seed, elegiveis) {
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed));
     const hex = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
-    return MINIMO + Number(BigInt('0x' + hex) % BigInt(MAXIMO - MINIMO + 1));
+    return elegiveis[Number(BigInt('0x' + hex) % BigInt(elegiveis.length))];
   }
 
   async function sortear() {
@@ -98,12 +98,15 @@
     clienteEl.textContent = '';
     try {
       const seed = novaSeed();
-      const [numero, dadosPedidos] = await Promise.all([numeroDaSeed(seed), pedidos, esperar(900)]);
+      const [dadosPedidos] = await Promise.all([pedidos, esperar(900)]);
+      const elegiveis = Object.keys(dadosPedidos).map(Number).sort((a, b) => a - b);
+      if (!elegiveis.length) throw new Error('sem pedidos');
+      const numero = await numeroDaSeed(seed, elegiveis);
 
       numeroEl.classList.remove('vazio', 'pronto');
       const fim = Date.now() + 900;
       while (Date.now() < fim) {
-        numeroEl.textContent = MINIMO + Math.floor(Math.random() * (MAXIMO - MINIMO + 1));
+        numeroEl.textContent = elegiveis[Math.floor(Math.random() * elegiveis.length)];
         await esperar(60);
       }
       numeroEl.textContent = numero;
