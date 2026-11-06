@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sorteio Lost and Found</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Substitutas gratuitas: Fraunces ~ Flowers of Nineties (títulos), Figtree ~ Ulm Grotesk (apoio) -->
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --offwhite: #fcfbf2; --nude: #feede3; --orange: #feb786; --terracota: #f69d7c;
+    --pink: #ffcacf; --blue: #b8dcff; --yellow: #ffedbc; --purple: #d9beff;
+    --brown: #2b1003; --muted: #7a6459;
+    --display: "Flowers Of Nineties", "Fraunces", Georgia, serif;
+    --body: "Ulm Grotesk", "Figtree", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+    background: var(--offwhite); color: var(--brown); font-family: var(--body);
+  }
+  main { width: 100%; max-width: 440px; text-align: center; }
+  .logo { display: block; width: 190px; margin: 0 auto 28px; mix-blend-mode: multiply; }
+  .cartao {
+    background: var(--nude); border-radius: 28px; padding: 36px 20px 28px;
+    position: relative; overflow: hidden;
+  }
+  .cartao::before, .cartao::after {
+    content: ""; position: absolute; border-radius: 50%; opacity: .55; pointer-events: none;
+  }
+  .cartao::before { width: 150px; height: 150px; background: var(--pink); top: -60px; left: -50px; }
+  .cartao::after { width: 130px; height: 130px; background: var(--purple); bottom: -55px; right: -45px; }
+  .cartao > * { position: relative; z-index: 1; }
+  .nome {
+    font-family: var(--display); font-weight: 400;
+    font-size: clamp(2.8rem, 14vw, 4.6rem); line-height: 1.1; letter-spacing: -.02em;
+    min-height: 1.2em; overflow-wrap: anywhere;
+  }
+  .nome.vazio { color: var(--orange); }
+  .nome.pronto { animation: pulo .4s ease-out; }
+  @keyframes pulo { 0% { transform: scale(.94); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
+  .seed { margin-top: 22px; min-height: 2.6em; font-size: .85rem; color: var(--muted); }
+  .seed b { display: block; margin-top: 2px; color: var(--brown); font-weight: 500; font-size: .95rem; letter-spacing: .08em; user-select: all; }
+  button {
+    margin-top: 12px; width: 100%; padding: 17px; border: 0; border-radius: 999px;
+    background: var(--brown); color: var(--offwhite);
+    font: inherit; font-size: 1.05rem; font-weight: 500; cursor: pointer;
+    transition: background .2s;
+  }
+  button:hover { background: #4a2210; }
+  button:focus-visible { outline: 3px solid var(--terracota); outline-offset: 3px; }
+  button:disabled { opacity: .55; cursor: default; }
+  .erro { color: #a3361b; margin-top: 12px; font-size: .9rem; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="../logo.png" alt="Mushin">
+  <section class="cartao">
+    <div class="nome vazio" id="nome" role="status" aria-live="polite">····</div>
+    <div class="seed" id="seed"></div>
+    <button id="botao" type="button">Sortear</button>
+    <div class="erro" id="erro"></div>
+  </section>
+</main>
+<script>
+  const nomeEl = document.getElementById('nome');
+  const seedEl = document.getElementById('seed');
+  const botao = document.getElementById('botao');
+  const erro = document.getElementById('erro');
+  const esperar = ms => new Promise(r => setTimeout(r, ms));
+  const assinantes = fetch('../assinantes.json').then(r => r.ok ? r.json() : []).catch(() => []);
+
+  const novaSeed = () => Array.from(crypto.getRandomValues(new Uint8Array(8)),
+    b => b.toString(16).padStart(2, '0')).join('');
+
+  // Mesma regra do sorteio.py: SHA-256 da seed (UTF-8) como inteiro, módulo a quantidade
+  // de assinantes = posição na lista do assinantes.json.
+  async function posicaoDaSeed(seed, quantidade) {
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed));
+    const hex = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+    return Number(BigInt('0x' + hex) % BigInt(quantidade));
+  }
+
+  async function sortear() {
+    botao.disabled = true;
+    erro.textContent = '';
+    seedEl.textContent = '';
+    try {
+      const seed = novaSeed();
+      const [lista] = await Promise.all([assinantes, esperar(900)]);
+      if (!lista.length) throw new Error('sem assinantes');
+      const vencedor = lista[await posicaoDaSeed(seed, lista.length)];
+
+      nomeEl.classList.remove('vazio', 'pronto');
+      const fim = Date.now() + 900;
+      while (Date.now() < fim) {
+        nomeEl.textContent = lista[Math.floor(Math.random() * lista.length)];
+        await esperar(60);
+      }
+      nomeEl.textContent = vencedor;
+      void nomeEl.offsetWidth;
+      nomeEl.classList.add('pronto');
+
+      seedEl.textContent = 'Seed do sorteio';
+      const b = document.createElement('b');
+      b.textContent = seed;
+      seedEl.appendChild(b);
+    } catch {
+      erro.textContent = 'Não foi possível sortear. Tente novamente.';
+    } finally {
+      botao.disabled = false;
+    }
+  }
+  botao.addEventListener('click', sortear);
+</script>
+</body>
+</html>
